@@ -8,13 +8,13 @@ class PostfixCalculator:
     def __init__(self):
         self._buffer = deque()
         self._operations = {}
-        self._exception_message = "Invalid Syntax"
+        self._exception_message = ""
         self.init_dict()
 
     def init_dict(self):
         self._operations = {
             "+": lambda: self.ensure_operands(2) or self._buffer.pop() + self._buffer.pop(),
-            "-": lambda: self.ensure_operands(2) or -self._buffer.pop() + self._buffer.pop(),
+            "-": lambda: self.ensure_operands(2) or (-self._buffer.pop() + self._buffer.pop()),
             "*": lambda: self.ensure_operands(2) or self._buffer.pop() * self._buffer.pop(),
             "/": lambda: self.ensure_operands(2) or self.divide(),
             "%": lambda: self.ensure_operands(2) or self._buffer.pop() % self._buffer.pop(),
@@ -30,46 +30,63 @@ class PostfixCalculator:
 
     def ensure_operands(self, count):
         if len(self._buffer) < count:
-            self.throw_exception(f"Insufficient operands (needed {count})")
+            self.throw_exception("Not enough numbers in the stack")
+            return True  # Flag to indicate an error occurred
 
     def divide(self):
         num2 = self._buffer.pop()
         num1 = self._buffer.pop()
         if num2 == 0:
+            self._buffer.append(num1)  # Push numbers back to stack
+            self._buffer.append(num2)
             self.throw_exception("Cannot divide by zero")
+            return None  # Indicate that division couldn't be performed
         return num1 / num2
 
     def sqrt(self):
         num = self._buffer.pop()
         if num < 0:
+            self._buffer.append(num)
             self.throw_exception("Sqrt() cannot be < 0")
+            return None
         return math.sqrt(num)
 
     def log10(self):
         num = self._buffer.pop()
         if num <= 0:
+            self._buffer.append(num)
             self.throw_exception("Log() cannot be ≤ 0")
+            return None
         return math.log10(num)
 
     def ln(self):
         num = self._buffer.pop()
         if num <= 0:
+            self._buffer.append(num)
             self.throw_exception("Ln() cannot be ≤ 0")
+            return None
         return math.log(num)
 
     def process_input(self, input_value):
-        if input_value in self._operations:
-            # If input is an operator, perform the operation with last two numbers
-            try:
-                result = self._operations[input_value]()
-                self._buffer.append(result)
-                return result
-            except Exception as e:
-                return str(e)
-        else:
-            # If it's a number, add it to the stack
-            self._buffer.append(float(input_value))
-            return input_value
+        tokens = input_value.split()
+        results = []
+        for token in tokens:
+            if token in self._operations:
+                try:
+                    result = self._operations[token]()
+                    if result is not None:
+                        self._buffer.append(result)
+                    results.append(result)
+                except Exception:
+                    results.append(self.get_exception_message())
+            else:
+                try:
+                    number = float(token)
+                    self._buffer.append(number)
+                    results.append(number)
+                except ValueError:
+                    results.append("Invalid input")
+        return results
 
     def throw_exception(self, msg):
         self._exception_message = msg
@@ -78,12 +95,15 @@ class PostfixCalculator:
     def get_stack(self):
         return list(self._buffer)
 
+    def get_exception_message(self):
+        return self._exception_message
+
 
 class CalculatorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Reverse Calculator")
-        self.root.geometry("400x300")
+        self.root.geometry("450x400")
 
         self.result_var = StringVar()
         self.input_var = StringVar()
@@ -103,10 +123,13 @@ class CalculatorApp:
         self.result_label = ttk.Label(self.root, textvariable=self.result_var, font=("Helvetica", 16), anchor="center")
         self.result_label.pack(pady=10)
 
+        # Bind Enter keys and history navigation
         self.input_entry.bind("<Return>", self.calculate_result)
+        self.input_entry.bind("<KP_Enter>", self.calculate_result)  # Numeric keypad Enter
         self.input_entry.bind("<Up>", self.show_previous_command)
         self.input_entry.bind("<Down>", self.show_next_command)
 
+        # Status bar for displaying messages
         status = ttk.Label(self.root, textvariable=self.status_var, anchor="w", relief="sunken")
         status.pack(side="bottom", fill="x")
 
@@ -114,22 +137,29 @@ class CalculatorApp:
         user_input = self.input_var.get()
         if user_input:
             try:
-                result = self.calculator.process_input(user_input)
+                # Process input and update display
+                results = self.calculator.process_input(user_input)
                 self.update_display()
-                self.status_var.set("Input processed successfully.")
 
-                # Append input to history
+                # Check if there was an error message to display
+                if self.calculator.get_exception_message():
+                    self.status_var.set(self.calculator.get_exception_message())
+                    self.calculator._exception_message = ""  # Clear message after displaying
+                else:
+                    self.status_var.set("Input processed successfully.")
+
+                # Add input to history
                 self.history.append(user_input)
                 self.history_index = None
             except Exception as e:
-                self.result_var.set("Error")
                 self.status_var.set(f"Error: {str(e)}")
+                self.result_var.set("Error")
 
         self.input_var.set("")
 
     def update_display(self):
-        # Display the current stack as a string
-        stack_display = "Stack: " + " ".join(map(str, self.calculator.get_stack()))
+        # Display the stack as a column of numbers
+        stack_display = "\n".join(map(str, self.calculator.get_stack()))
         self.result_var.set(stack_display)
 
     def show_previous_command(self, _):
